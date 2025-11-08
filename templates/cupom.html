@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-t">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cupom - Venda {{ id_venda }}</title>
+    <style>
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            width: 300px;
+            margin: 0 auto;
+            padding: 10px;
+            color: #000;
+            background: #fff;
+        }
+        .center {
+            text-align: center;
+        }
+        hr {
+            border: 0;
+            border-top: 1px dashed #000;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 2px 0;
+        }
+        .total {
+            font-size: 1.2em;
+            font-weight: bold;
+        }
+        @media print {
+            body {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body onload="window.print();">
+
+    <div class="center">
+        <h4>Gestão Loja de Móveis</h4>
+        <p>CNPJ: 00.000.000/0001-00</p>
+        <p>Av. Exemplo, 123 - Centro</p>
+        <hr>
+        <p>
+            {{ data_venda }} - Venda ID: <strong>{{ id_venda }}</strong><br>
+            CUPOM NÃO FISCAL
+        </p>
+        <hr>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Produto</th>
+                <th>Qtd</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in itens %}
+            <tr>
+                <td>{{ item.nome_produto }}</td>
+                <td class="center">{{ item.quantidade_vendida }}</td>
+                <td style="text-align: right;">{{ "%.2f"|format(item.total_item) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <hr>
+
+    <div>
+        <span class="total">TOTAL</span>
+        <span class="total" style="float: right;">R$ {{ "%.2f"|format(total) }}</span>
+    </div>
+
+    <hr>
+    <p class="center">Obrigado pela preferência!</p>
+
+</body>
+</html>

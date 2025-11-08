@@ -1,0 +1,111 @@
+{% extends 'layout.html' %}
+{% block title %}Consulta de Estoque{% endblock %}
+
+{% block content %}
+<div class="card shadow-sm">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center">
+        <h4 class="mb-0"><i class="bi bi-search"></i> Consulta de Estoque</h4>
+        
+        <div class="d-flex mt-2 mt-md-0">
+            <div class="input-group">
+                <input type="text" id="filtro-estoque" class="form-control" placeholder="Filtrar por nome ou código...">
+                <button class="btn btn-outline-secondary" type="button" data-bs-toggle="modal" data-bs-target="#scannerModal">
+                    <i class="bi bi-camera-video"></i>
+                </button>
+            </div>
+            <button class="btn btn-secondary ms-2" id="btn-atualizar-estoque" style="white-space: nowrap;">
+                <i class="bi bi-arrow-clockwise"></i> Atualizar
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive" style="max-height: 70vh;">
+            <table class="table table-striped table-hover table-bordered">
+                <thead class="table-dark" style="position: sticky; top: 0;">
+                    <tr>
+                        <th>Código</th>
+                        <th>Nome</th>
+                        <th>Preço (R$)</th>
+                        <th>Qtd.</th>
+                        <th>Categoria</th>
+                        <th>Descrição</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody id="estoque-tabela-corpo">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="scannerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Apontar Câmera para o Código</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="scanner-overlay">
+                    <video id="video-scanner" style="width: 100%;"></video>
+                    <div class="scanner-laser"></div>
+                </div>
+                <button class="btn btn-outline-secondary w-100 mt-2" id="btn-switch-camera" type="button">
+                    <i class="bi bi-arrow-repeat"></i> Trocar Câmera
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Editar Produto: <span id="edit-modal-title"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="form-edit-produto">
+                    <input type="hidden" id="edit-codigo">
+                    <div class="row g-3">
+                        <div class="col-md-12">
+                            <label for="edit-nome" class="form-label">Nome</label>
+                            <input type="text" class="form-control" id="edit-nome" required>
+                        </div>
+                        <div class="col-12">
+                            <label for="edit-desc" class="form-label">Descrição</label>
+                            <input type="text" class="form-control" id="edit-desc">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="edit-cat" class="form-label">Categoria</label>
+                            <input type="text" class="form-control" id="edit-cat">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="edit-preco" class="form-label">Preço (R$)</label>
+                            <input type="number" step="0.01" class="form-control" id="edit-preco" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="edit-qtd" class="form-label">Quantidade (Estoque)</label>
+                            <input type="number" class="form-control" id="edit-qtd" required>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btn-salvar-edicao">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true" id="spinner-salvar-edicao" style="display: none;"></span>
+                    Salvar Alterações
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/consulta.js') }}"></script>
+{% endblock %}
