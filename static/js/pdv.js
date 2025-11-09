@@ -64,7 +64,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const produto = await response.json();
             
             if (response.ok) {
-                // Garante que o preço seja um número para toFixed funcionar
+                // CORREÇÃO: Garante que o preço seja um número para toFixed funcionar
                 const precoNum = parseFloat(String(produto.preco).replace(',', '.'));
                 lookupResultado.innerHTML = `
                     <div class="alert alert-info p-2">
@@ -109,11 +109,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const itemExistente = carrinho.find(item => item.codigo_barras === codigo);
             const qtdTotalNecessaria = (itemExistente ? itemExistente.quantidade : 0) + quantidade;
 
-            if (produto.quantidade < qtdTotalNecessaria) {
-                mostrarMensagem(`Estoque insuficiente. Disponível: ${produto.quantidade}`, 'erro');
+            // Usa a quantidade do cache/api (que é a mais atual)
+            const estoqueDisponivel = parseInt(produto.quantidade);
+
+            if (estoqueDisponivel < qtdTotalNecessaria) {
+                mostrarMensagem(`Estoque insuficiente. Disponível: ${estoqueDisponivel}`, 'erro');
                 return;
             }
             
+            // CORREÇÃO: Garante que o preço seja um número para cálculo
             const precoUnit = parseFloat(String(produto.preco).replace(',', '.'));
 
             if (itemExistente) {
@@ -315,12 +319,6 @@ document.addEventListener('DOMContentLoaded', () => {
             mostrarMensagem(`Erro no scanner: ${erro.message}`, 'erro');
         }
     );
-
-    // Expõe funções para o `onclick` (se ainda usar) - Melhorado para delegação
-    // window.pdv = {
-    //     aumentarItem,
-    //     diminuirItem
-    // };
 
     // Carrega o cache de produtos ao iniciar
     carregarCacheProdutos();
