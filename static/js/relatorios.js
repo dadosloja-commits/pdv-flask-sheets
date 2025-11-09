@@ -1,128 +1,161 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const ctxProdutos = document.getElementById('grafico-produtos');
+    // Referências aos elementos <canvas>
     const ctxFaturamentoDia = document.getElementById('grafico-faturamento-dia');
-    let graficoProdutos = null;
+    const ctxCategorias = document.getElementById('grafico-categorias');
+    const ctxTopProdutos = document.getElementById('grafico-top-produtos');
+    
+    // Variáveis para guardar as instâncias dos gráficos
     let graficoFaturamento = null;
+    let graficoCategorias = null;
+    let graficoTopProdutos = null;
 
-    const kpiFaturamento = document.getElementById('kpi-faturamento');
-    const kpiVendas = document.getElementById('kpi-vendas');
-    const kpiMaisVendido = document.getElementById('kpi-mais-vendido');
+    // Referências aos KPIs de Vendas
+    const kpiFaturamentoHoje = document.getElementById('kpi-faturamento-hoje');
+    const kpiPedidosHoje = document.getElementById('kpi-pedidos-hoje');
+    const kpiFaturamentoMes = document.getElementById('kpi-faturamento-mes');
+    const kpiPedidosMes = document.getElementById('kpi-pedidos-mes');
 
-    async function gerarRelatorio() {
+    // Referências aos KPIs de Estoque
+    const kpiValorEstoque = document.getElementById('kpi-valor-estoque');
+    const kpiBaixoEstoque = document.getElementById('kpi-baixo-estoque');
+    const listaBaixoEstoque = document.getElementById('lista-baixo-estoque');
+
+    // Função para formatar valores como moeda (R$)
+    function formatarMoeda(valor) {
+        return valor.toLocaleString('pt-br', { style: 'currency', currency: 'BRL' });
+    }
+
+    // 1. Função para carregar dados de VENDAS
+    async function carregarRelatorioVendas() {
         try {
             const response = await fetch('/api/relatorio/vendas');
             if (!response.ok) {
-                mostrarMensagem('Falha ao buscar dados das vendas.', 'erro');
+                mostrarMensagem('Falha ao buscar dados de vendas.', 'erro');
                 return;
             }
-            const vendas = await response.json();
-            
-            processarKPIs(vendas);
-            processarGraficoProdutos(vendas);
-            processarGraficoFaturamentoDia(vendas);
-            
-            mostrarMensagem('Relatórios atualizados!', 'sucesso');
-            
+            const dados = await response.json();
+
+            // Preenche KPIs de Vendas
+            kpiFaturamentoHoje.textContent = formatarMoeda(dados.kpis.faturamento_hoje);
+            kpiPedidosHoje.textContent = dados.kpis.pedidos_hoje;
+            kpiFaturamentoMes.textContent = formatarMoeda(dados.kpis.faturamento_mes);
+            kpiPedidosMes.textContent = dados.kpis.pedidos_mes;
+
+            // Renderiza Gráficos de Vendas
+            renderizarGraficoFaturamento(dados.graficos.faturamento_ultimos_30_dias);
+            renderizarGraficoCategorias(dados.graficos.vendas_por_categoria);
+            renderizarGraficoTopProdutos(dados.graficos.produtos_mais_vendidos);
+
         } catch (error) {
-            mostrarMensagem('Erro de conexão ao gerar relatório.', 'erro');
+            mostrarMensagem('Erro de conexão ao buscar vendas.', 'erro');
+            console.error(error);
         }
     }
+
+    // 2. Função para carregar dados de ESTOQUE
+    async function carregarRelatorioEstoque() {
+        try {
+            const response = await fetch('/api/relatorio/estoque');
+            if (!response.ok) {
+                mostrarMensagem('Falha ao buscar dados de estoque.', 'erro');
+                return;
+            }
+            const dados = await response.json();
+
+            // Preenche KPIs de Estoque
+            kpiValorEstoque.textContent = formatarMoeda(dados.kpis.valor_total_estoque);
+            kpiBaixoEstoque.textContent = dados.kpis.itens_baixo_estoque_contagem;
+
+            // Preenche Lista de Baixo Estoque
+            listaBaixoEstoque.innerHTML = '';
+            if (dados.listas.itens_baixo_estoque_nomes.length === 0) {
+                listaBaixoEstoque.innerHTML = '<li class="list-group-item text-success">Nenhum item com baixo estoque.</li>';
+            } else {
+                dados.listas.itens_baixo_estoque_nomes.forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = 'list-group-item list-group-item-warning';
+                    li.textContent = item;
+                    listaBaixoEstoque.appendChild(li);
+                });
+            }
+
+        } catch (error) {
+            mostrarMensagem('Erro de conexão ao buscar estoque.', 'erro');
+            console.error(error);
+        }
+    }
+
+    // 3. Funções para RENDERIZAR os gráficos
     
-    function processarKPIs(vendas) {
-        if (vendas.length === 0) {
-            kpiFaturamento.textContent = 'R$ 0.00';
-            kpiVendas.textContent = '0';
-            kpiMaisVendido.textContent = '-';
-            return;
-        }
-
-        // CORRIGIDO: Adiciona replace para tratar vírgula
-        const faturamentoTotal = vendas.reduce((acc, venda) => acc + parseFloat(String(venda.total_item).replace(',', '.')), 0);
-        kpiFaturamento.textContent = `R$ ${faturamentoTotal.toFixed(2)}`;
-        
-        const idsVendasUnicas = [...new Set(vendas.map(v => v.id_venda))];
-        kpiVendas.textContent = idsVendasUnicas.length;
-        
-        const vendasPorProduto = {};
-        vendas.forEach(venda => {
-            const nome = venda.nome_produto;
-            const qtd = parseInt(venda.quantidade_vendida);
-            vendasPorProduto[nome] = (vendasPorProduto[nome] || 0) + qtd;
-        });
-        
-        let maisVendidoNome = '-';
-        let maisVendidoQtd = 0;
-        for (const [nome, qtd] of Object.entries(vendasPorProduto)) {
-            if (qtd > maisVendidoQtd) {
-                maisVendidoQtd = qtd;
-                maisVendidoNome = nome;
-            }
-        }
-        kpiMaisVendido.textContent = maisVendidoNome;
-    }
-
-    function processarGraficoProdutos(vendas) {
-        const vendasPorProduto = {};
-        vendas.forEach(venda => {
-            const nome = venda.nome_produto;
-            const qtd = parseInt(venda.quantidade_vendida);
-            vendasPorProduto[nome] = (vendasPorProduto[nome] || 0) + qtd;
-        });
-        
-        if (graficoProdutos) graficoProdutos.destroy();
-        
-        graficoProdutos = new Chart(ctxProdutos, {
-            type: 'doughnut',
-            data: {
-                labels: Object.keys(vendasPorProduto),
-                datasets: [{
-                    label: 'Quantidade Vendida',
-                    data: Object.values(vendasPorProduto),
-                    borderWidth: 1
-                }]
-            },
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false
-            }
-        });
-    }
-
-    function processarGraficoFaturamentoDia(vendas) {
-        const vendasPorDia = {};
-        vendas.forEach(venda => {
-            const dia = venda.data_hora.split(' ')[0];
-            // CORRIGIDO: Adiciona replace para tratar vírgula
-            const total = parseFloat(String(venda.total_item).replace(',', '.'));
-            vendasPorDia[dia] = (vendasPorDia[dia] || 0) + total;
-        });
-
-        const labelsOrdenados = Object.keys(vendasPorDia).sort();
-        const dataOrdenada = labelsOrdenados.map(dia => vendasPorDia[dia]);
-        
+    function renderizarGraficoFaturamento(dados) {
         if (graficoFaturamento) graficoFaturamento.destroy();
-
+        
         graficoFaturamento = new Chart(ctxFaturamentoDia, {
             type: 'line',
             data: {
-                labels: labelsOrdenados,
+                labels: Object.keys(dados),
                 datasets: [{
                     label: 'Faturamento Diário (R$)',
-                    data: dataOrdenada,
+                    data: Object.values(dados),
                     fill: false,
                     borderColor: 'rgb(75, 192, 192)',
                     tension: 0.1
                 }]
             },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    function renderizarGraficoCategorias(dados) {
+        if (graficoCategorias) graficoCategorias.destroy();
+        
+        graficoCategorias = new Chart(ctxCategorias, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(dados),
+                datasets: [{
+                    label: 'Vendas por Categoria',
+                    data: Object.values(dados),
+                    borderWidth: 1
+                }]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+
+    function renderizarGraficoTopProdutos(dados) {
+        if (graficoTopProdutos) graficoTopProdutos.destroy();
+        
+        graficoTopProdutos = new Chart(ctxTopProdutos, {
+            type: 'bar',
+            data: {
+                labels: Object.keys(dados),
+                datasets: [{
+                    label: 'Top 5 Produtos (Qtd)',
+                    data: Object.values(dados),
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                }]
+            },
             options: { 
                 responsive: true, 
-                maintainAspectRatio: false
+                maintainAspectRatio: false,
+                indexAxis: 'y', // Faz o gráfico de barras deitado
             }
         });
     }
 
-    document.getElementById('btn-gerar-relatorio').addEventListener('click', gerarRelatorio);
+    // Função "Mestra" que chama tudo
+    async function atualizarTudo() {
+        await carregarRelatorioVendas();
+        await carregarRelatorioEstoque();
+        mostrarMensagem('Dashboard atualizado!', 'sucesso');
+    }
+
+    // Event Listeners
+    document.getElementById('btn-atualizar-relatorios').addEventListener('click', atualizarTudo);
     
-    // CORRIGIDO: Chamada direta da função
-    gerarRelatorio();
+    // Carrega tudo assim que a página é aberta
+    atualizarTudo();
 });
