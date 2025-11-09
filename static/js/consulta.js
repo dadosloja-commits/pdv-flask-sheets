@@ -1,78 +1,104 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // --- Referências do DOM ---
     const btnAtualizarEstoque = document.getElementById('btn-atualizar-estoque');
     const tabelaCorpo = document.getElementById('estoque-tabela-corpo');
     const filtroInput = document.getElementById('filtro-estoque');
-    let cacheEstoque = [];
-
-    const scannerModalEl = document.getElementById('scannerModal');
-    const scannerModal = new bootstrap.Modal(scannerModalEl);
-    const btnSwitchCamera = document.getElementById('btn-switch-camera');
-
+    
+    // --- Referências do Modal de Edição ---
     const editModalEl = document.getElementById('editModal');
     const editModal = new bootstrap.Modal(editModalEl);
-    const formEdit = document.getElementById('form-edit-produto');
     const btnSalvarEdicao = document.getElementById('btn-salvar-edicao');
     const spinnerSalvarEdicao = document.getElementById('spinner-salvar-edicao');
     const editModalTitle = document.getElementById('edit-modal-title');
 
+    // --- Referências do Scanner (para o módulo) ---
+    const scannerModalEl = document.getElementById('scannerModal');
+    const videoElement = document.getElementById('video-scanner');
+    const btnSwitchCamera = document.getElementById('btn-switch-camera');
+    
+    // --- Variáveis de Estado ---
+    let cacheEstoque = [];
+
+    /**
+     * Busca o /api/estoque, armazena no cache e renderiza a tabela.
+     */
     async function atualizarEstoque() {
         tabelaCorpo.innerHTML = '<tr><td colspan="7" class="text-center">Carregando...</td></tr>';
         try {
             const response = await fetch('/api/estoque');
-            const estoque = await response.json();
-            
-            if (response.ok) {
-                cacheEstoque = estoque;
-                renderizarTabela(estoque);
-            } else {
-                tabelaCorpo.innerHTML = `<tr class="table-danger"><td colspan="7" class="text-center">Erro: ${estoque.erro}</td></tr>`;
+            if (!response.ok) {
+                const erro = await response.json();
+                throw new Error(erro.erro || 'Falha ao carregar');
             }
+            
+            cacheEstoque = await response.json();
+            renderizarTabela(cacheEstoque);
+
         } catch (error) {
-            tabelaCorpo.innerHTML = `<tr class="table-danger"><td colspan="7" class="text-center">Erro de conexão ao carregar estoque.</td></tr>`;
+            tabelaCorpo.innerHTML = `<tr class="table-danger"><td colspan="7" class="text-center">Erro: ${error.message}</td></tr>`;
+            console.error(error);
         }
     }
     
+    /**
+     * Desenha as linhas da tabela com base em uma lista de produtos.
+     */
     function renderizarTabela(itens) {
         tabelaCorpo.innerHTML = '';
         if (itens.length === 0) {
-            tabelaCorpo.innerHTML = '<tr><td colspan="7" class="text-center">Nenhum produto cadastrado.</td></tr>';
+            tabelaCorpo.innerHTML = '<tr><td colspan="7" class="text-center">Nenhum produto encontrado.</td></tr>';
             return;
         }
+        
+        const fragment = document.createDocumentFragment();
         itens.forEach(produto => {
             const linha = document.createElement('tr');
+            
+            // Garante que o preço seja um número para toFixed funcionar
+            const precoNum = parseFloat(String(produto.preco).replace(',', '.'));
+            
             linha.innerHTML = `
                 <td>${produto.codigo_barras}</td>
                 <td>${produto.nome}</td>
-                <td>${parseFloat(produto.preco).toFixed(2)}</td>
+                <td>${precoNum.toFixed(2)}</td>
                 <td>${produto.quantidade}</td>
                 <td>${produto.categoria}</td>
                 <td>${produto.descricao}</td>
                 <td>
-                    <button class="btn btn-outline-primary btn-sm" data-produto-codigo="${produto.codigo_barras}" onclick="window.consulta.abrirModalEdicao(this)">
+                    <button class="btn btn-outline-primary btn-sm" data-produto-codigo="${produto.codigo_barras}">
                         <i class="bi bi-pencil"></i>
                     </button>
                 </td>
             `;
+            
+            // Adiciona classes de alerta de estoque
             if (produto.quantidade <= 5 && produto.quantidade > 0) {
                 linha.classList.add('table-warning');
             } else if (produto.quantidade == 0) {
                 linha.classList.add('table-danger');
             }
-            tabelaCorpo.appendChild(linha);
+            
+            fragment.appendChild(linha);
         });
+        tabelaCorpo.appendChild(fragment);
     }
 
-    filtroInput.addEventListener('keyup', () => {
+    /**
+     * Filtra o 'cacheEstoque' local com base no termo de busca e renderiza.
+     */
+    function filtrarTabela() {
         const termo = filtroInput.value.toLowerCase();
         const itensFiltrados = cacheEstoque.filter(produto => {
             return produto.nome.toLowerCase().includes(termo) || 
                    produto.codigo_barras.toString().toLowerCase().includes(termo);
         });
         renderizarTabela(itensFiltrados);
-    });
+    }
 
-    function abrirModalEdicao(button) {
-        const codigo = button.getAttribute('data-produto-codigo');
+    /**
+     * Preenche e abre o modal de edição com dados do produto.
+     */
+    function abrirModalEdicao(codigo) {
         const produto = cacheEstoque.find(p => p.codigo_barras == codigo);
         
         if (!produto) {
@@ -85,12 +111,19 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('edit-nome').value = produto.nome;
         document.getElementById('edit-desc').value = produto.descricao;
         document.getElementById('edit-cat').value = produto.categoria;
-        document.getElementById('edit-preco').value = parseFloat(produto.preco).toFixed(2);
+        
+        // Garante que o preço seja um número para toFixed funcionar
+        const precoNum = parseFloat(String(produto.preco).replace(',', '.'));
+        document.getElementById('edit-preco').value = precoNum.toFixed(2);
+        
         document.getElementById('edit-qtd').value = produto.quantidade;
         
         editModal.show();
     }
 
+    /**
+     * Envia os dados do modal de edição para a API (PUT).
+     */
     async function salvarEdicao() {
         spinnerSalvarEdicao.style.display = 'inline-block';
         btnSalvarEdicao.disabled = true;
@@ -116,91 +149,58 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 mostrarMensagem('Produto atualizado com sucesso!', 'sucesso');
                 editModal.hide();
-                await atualizarEstoque();
-                filtroInput.dispatchEvent(new Event('keyup', { 'bubbles': true }));
+                await atualizarEstoque(); // Recarrega o cache
+                filtrarTabela(); // Re-aplica o filtro
             } else {
                 mostrarMensagem(resultado.erro, 'erro');
             }
         } catch (error) {
             mostrarMensagem('Erro de conexão ao salvar.', 'erro');
+            console.error(error);
         } finally {
             spinnerSalvarEdicao.style.display = 'none';
             btnSalvarEdicao.disabled = false;
         }
     }
     
+    // --- Event Listeners ---
+    
     btnSalvarEdicao.addEventListener('click', salvarEdicao);
     btnAtualizarEstoque.addEventListener('click', atualizarEstoque);
+    filtroInput.addEventListener('keyup', filtrarTabela);
+    
+    // Delegação de eventos para o botão "Editar"
+    tabelaCorpo.addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (button) {
+            const codigo = button.dataset.produtoCodigo;
+            abrirModalEdicao(codigo);
+        }
+    });
+
+    // --- Inicialização ---
+
+    // Inicializa o módulo do scanner
+    createScanner(
+        scannerModalEl,
+        videoElement,
+        btnSwitchCamera,
+        (codigoLido) => {
+            // Callback de Sucesso
+            filtroInput.value = codigoLido;
+            filtrarTabela(); // Dispara a filtragem
+        },
+        (erro) => {
+            // Callback de Erro
+            mostrarMensagem(`Erro no scanner: ${erro.message}`, 'erro');
+        }
+    );
+    
+    // Carrega o estoque inicial
     atualizarEstoque();
 
-    let codeReader = null;
-    let videoInputDevices = [];
-    let currentCameraIndex = 0;
-
-    function startScanner() {
-        if (codeReader && videoInputDevices.length > 0) {
-            const deviceId = videoInputDevices[currentCameraIndex].deviceId;
-            
-            codeReader.decodeFromVideoDevice(deviceId, 'video-scanner', (result, err) => {
-                if (result) {
-                    filtroInput.value = result.text;
-                    scannerModal.hide();
-                    if (navigator.vibrate) { navigator.vibrate(100); }
-                    filtroInput.dispatchEvent(new Event('keyup', { 'bubbles': true }));
-                }
-                if (err && !(err instanceof ZXing.NotFoundException)) {
-                    console.error(err);
-                }
-            }).catch(err => console.error("Erro ao decodificar:", err));
-        }
-    }
-
-    scannerModalEl.addEventListener('shown.bs.modal', () => {
-        codeReader = new ZXing.BrowserMultiFormatReader();
-        
-        codeReader.listVideoInputDevices()
-            .then(devices => {
-                if (devices.length === 0) {
-                    throw new Error('Nenhuma câmera encontrada.');
-                }
-                videoInputDevices = devices;
-                
-                let initialCameraIndex = devices.length - 1;
-                const rearCamEnv = devices.findIndex(d => d.label.toLowerCase().includes('environment'));
-                const rearCamBack = devices.findIndex(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
-
-                if (rearCamEnv !== -1) initialCameraIndex = rearCamEnv;
-                else if (rearCamBack !== -1) initialCameraIndex = rearCamBack;
-                
-                currentCameraIndex = initialCameraIndex;
-                btnSwitchCamera.disabled = videoInputDevices.length <= 1;
-                
-                startScanner();
-            })
-            .catch(err => {
-                console.error("Erro grave ao listar câmeras:", err);
-                mostrarMensagem('Falha ao listar câmeras.', 'erro');
-                scannerModal.hide();
-            });
-    });
-
-    scannerModalEl.addEventListener('hidden.bs.modal', () => {
-        if (codeReader) {
-            codeReader.reset();
-        }
-        videoInputDevices = [];
-        currentCameraIndex = 0;
-    });
-
-    btnSwitchCamera.addEventListener('click', () => {
-        if (codeReader && videoInputDevices.length > 1) {
-            codeReader.reset();
-            currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
-            startScanner();
-        }
-    });
-
-    window.consulta = {
-        abrirModalEdicao
-    };
+    // Remove a exposição global, já que usamos delegação de eventos
+    // window.consulta = {
+    //     abrirModalEdicao
+    // };
 });
