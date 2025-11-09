@@ -1,6 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const scannerModalEl = document.getElementById('scannerModal');
-    const scannerModal = new bootstrap.Modal(scannerModalEl);
+    // --- Referências do DOM ---
     const inputCodigo = document.getElementById('pdv-codigo');
     const inputQtd = document.getElementById('pdv-qtd');
     const formAddItem = document.getElementById('form-add-item');
@@ -13,129 +12,65 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnFinalizarVenda = document.getElementById('btn-finalizar-venda');
     const btnLimparCarrinho = document.getElementById('btn-limpar-carrinho');
     
-    const btnSwitchCamera = document.getElementById('btn-switch-camera');
-    
     const pdvBuscaNome = document.getElementById('pdv-busca-nome');
     const datalistProdutos = document.getElementById('lista-produtos-nome');
-
     const spinnerFinalizar = document.getElementById('spinner-finalizar');
     const iconFinalizar = document.getElementById('icon-finalizar');
 
-    let codeReader = null;
+    // --- Referências do Scanner (para o módulo) ---
+    const scannerModalEl = document.getElementById('scannerModal');
+    const videoElement = document.getElementById('video-scanner');
+    const btnSwitchCamera = document.getElementById('btn-switch-camera');
+
+    // --- Variáveis de Estado ---
     let carrinho = [];
-    let videoInputDevices = [];
-    let currentCameraIndex = 0;
-    
     let cacheProdutos = [];
 
+    // --- Funções Principais ---
+
+    /**
+     * Busca o /api/estoque e preenche o cache e o datalist de busca por nome.
+     */
     async function carregarCacheProdutos() {
         try {
             const response = await fetch('/api/estoque');
-            if (response.ok) {
-                cacheProdutos = await response.json();
-                datalistProdutos.innerHTML = '';
-                cacheProdutos.forEach(produto => {
-                    const option = document.createElement('option');
-                    option.value = `${produto.nome} (Cod: ${produto.codigo_barras})`;
-                    datalistProdutos.appendChild(option);
-                });
-            }
+            if (!response.ok) throw new Error('Falha ao carregar estoque');
+            
+            cacheProdutos = await response.json();
+            datalistProdutos.innerHTML = ''; // Limpa opções antigas
+            
+            const fragment = document.createDocumentFragment();
+            cacheProdutos.forEach(produto => {
+                const option = document.createElement('option');
+                option.value = `${produto.nome} (Cod: ${produto.codigo_barras})`;
+                fragment.appendChild(option);
+            });
+            datalistProdutos.appendChild(fragment);
+
         } catch (error) {
             console.error("Falha ao carregar cache de produtos:", error);
+            mostrarMensagem('Falha ao carregar lista de produtos.', 'erro');
         }
     }
     
-    pdvBuscaNome.addEventListener('input', (e) => {
-        const valorInput = e.target.value;
-        const produtoSelecionado = cacheProdutos.find(p => `${p.nome} (Cod: ${p.codigo_barras})` === valorInput);
-        
-        if (produtoSelecionado) {
-            adicionarProdutoAoCarrinho(produtoSelecionado.codigo_barras, 1);
-            pdvBuscaNome.value = '';
-        }
-    });
-
-    function startScanner() {
-        if (codeReader && videoInputDevices.length > 0) {
-            const deviceId = videoInputDevices[currentCameraIndex].deviceId;
-            
-            codeReader.decodeFromVideoDevice(deviceId, 'video-scanner', (result, err) => {
-                if (result) {
-                    inputCodigo.value = result.text;
-                    scannerModal.hide();
-                    if (navigator.vibrate) { navigator.vibrate(100); }
-                    buscarProduto(result.text);
-                }
-                if (err && !(err instanceof ZXing.NotFoundException)) {
-                    console.error(err);
-                }
-            }).catch(err => console.error("Erro ao decodificar:", err));
-        }
-    }
-
-    scannerModalEl.addEventListener('shown.bs.modal', () => {
-        codeReader = new ZXing.BrowserMultiFormatReader();
-        
-        codeReader.listVideoInputDevices()
-            .then(devices => {
-                if (devices.length === 0) {
-                    throw new Error('Nenhuma câmera encontrada.');
-                }
-                videoInputDevices = devices;
-                
-                let initialCameraIndex = devices.length - 1;
-                const rearCamEnv = devices.findIndex(d => d.label.toLowerCase().includes('environment'));
-                const rearCamBack = devices.findIndex(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('traseira'));
-
-                if (rearCamEnv !== -1) initialCameraIndex = rearCamEnv;
-                else if (rearCamBack !== -1) initialCameraIndex = rearCamBack;
-                
-                currentCameraIndex = initialCameraIndex;
-                btnSwitchCamera.disabled = videoInputDevices.length <= 1;
-                
-                startScanner();
-            })
-            .catch(err => {
-                console.error("Erro grave ao listar câmeras:", err);
-                mostrarMensagem('Falha ao listar câmeras.', 'erro');
-                scannerModal.hide();
-            });
-    });
-
-    scannerModalEl.addEventListener('hidden.bs.modal', () => {
-        if (codeReader) {
-            codeReader.reset();
-        }
-        videoInputDevices = [];
-        currentCameraIndex = 0;
-    });
-
-    btnSwitchCamera.addEventListener('click', () => {
-        if (codeReader && videoInputDevices.length > 1) {
-            codeReader.reset();
-            currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
-            startScanner();
-        }
-    });
-
-    inputCodigo.addEventListener('change', () => {
-        if (inputCodigo.value) {
-            buscarProduto(inputCodigo.value);
-        }
-    });
-
+    /**
+     * Busca um produto específico na API e exibe o resultado no card.
+     */
     async function buscarProduto(codigo) {
+        if (!codigo) return;
         lookupResultado.innerHTML = `<span class="text-muted">Buscando...</span>`;
         try {
             const response = await fetch(`/api/produto/${codigo}`);
             const produto = await response.json();
             
             if (response.ok) {
+                // Garante que o preço seja um número para toFixed funcionar
+                const precoNum = parseFloat(String(produto.preco).replace(',', '.'));
                 lookupResultado.innerHTML = `
                     <div class="alert alert-info p-2">
                         <strong>${produto.nome}</strong>
                         <br>
-                        Preço: R$ ${produto.preco.toFixed(2)}
+                        Preço: R$ ${precoNum.toFixed(2)}
                         <span class="float-end">Estoque: ${produto.quantidade}</span>
                     </div>
                 `;
@@ -147,13 +82,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    formAddItem.addEventListener('submit', (e) => {
-        e.preventDefault();
-        const codigo = inputCodigo.value;
-        const quantidade = parseInt(inputQtd.value);
-        adicionarProdutoAoCarrinho(codigo, quantidade);
-    });
-
+    /**
+     * Adiciona um produto ao carrinho ou atualiza a quantidade se já existir.
+     */
     async function adicionarProdutoAoCarrinho(codigo, quantidade) {
         if (!codigo || !quantidade || quantidade <= 0) {
             mostrarMensagem('Código ou quantidade inválida.', 'erro');
@@ -161,12 +92,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const response = await fetch(`/api/produto/${codigo}`);
-            const produto = await response.json();
+            // Busca o produto no cache local primeiro
+            let produto = cacheProdutos.find(p => p.codigo_barras == codigo);
             
-            if (!response.ok) {
-                mostrarMensagem(produto.erro, 'erro');
-                return;
+            // Se não achar no cache (ex: recém-cadastrado), busca na API
+            if (!produto) {
+                const response = await fetch(`/api/produto/${codigo}`);
+                if (!response.ok) {
+                    const erro = await response.json();
+                    mostrarMensagem(erro.erro, 'erro');
+                    return;
+                }
+                produto = await response.json();
             }
 
             const itemExistente = carrinho.find(item => item.codigo_barras === codigo);
@@ -177,6 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
+            const precoUnit = parseFloat(String(produto.preco).replace(',', '.'));
+
             if (itemExistente) {
                 itemExistente.quantidade += quantidade;
                 itemExistente.total = itemExistente.quantidade * itemExistente.preco_unit;
@@ -185,8 +124,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     codigo_barras: produto.codigo_barras,
                     nome: produto.nome,
                     quantidade: quantidade,
-                    preco_unit: produto.preco,
-                    total: quantidade * produto.preco
+                    preco_unit: precoUnit,
+                    total: quantidade * precoUnit
                 });
             }
             
@@ -199,49 +138,52 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             mostrarMensagem('Erro ao adicionar item.', 'erro');
+            console.error(error);
         }
     }
 
+    /**
+     * Redesenha a lista do carrinho no HTML com base no array 'carrinho'.
+     */
     function atualizarCarrinhoVisual() {
-        if (carrinho.length === 0) {
-            itemCarrinhoVazio.style.display = 'block';
-            listaCarrinho.innerHTML = '';
-            listaCarrinho.appendChild(itemCarrinhoVazio);
-        } else {
-            itemCarrinhoVazio.style.display = 'none';
-            listaCarrinho.innerHTML = '';
-        }
-        
+        listaCarrinho.innerHTML = '';
         let totalItens = 0;
         let totalValor = 0;
 
-        carrinho.forEach((item, index) => {
-            totalItens += item.quantidade;
-            totalValor += item.total;
+        if (carrinho.length === 0) {
+            listaCarrinho.appendChild(itemCarrinhoVazio);
+            itemCarrinhoVazio.style.display = 'block';
+        } else {
+            itemCarrinhoVazio.style.display = 'none';
+            const fragment = document.createDocumentFragment();
 
-            const itemHTML = `
-                <li class="list-group-item d-flex justify-content-between align-items-center">
+            carrinho.forEach((item, index) => {
+                totalItens += item.quantidade;
+                totalValor += item.total;
+
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.innerHTML = `
                     <div>
                         <span class="fw-bold">${item.nome}</span>
                         <br>
                         <small class="text-muted">R$ ${item.preco_unit.toFixed(2)}</small>
                     </div>
                     <div class="d-flex align-items-center">
-                        <button class="btn btn-outline-secondary btn-sm" onclick="window.pdv.diminuirItem(${index})">
+                        <button class="btn btn-outline-secondary btn-sm" data-index="${index}" data-action="diminuir">
                             <i class="bi bi-dash-lg"></i>
                         </button>
                         <span class="mx-2">${item.quantidade}</span>
-                        <button class="btn btn-outline-secondary btn-sm" onclick="window.pdv.aumentarItem(${index})">
+                        <button class="btn btn-outline-secondary btn-sm" data-index="${index}" data-action="aumentar">
                             <i class="bi bi-plus-lg"></i>
                         </button>
-                        
                         <span class="badge bg-primary rounded-pill fs-6 ms-3" style="min-width: 90px;">R$ ${item.total.toFixed(2)}</span>
-                        
                     </div>
-                </li>
-            `;
-            listaCarrinho.insertAdjacentHTML('beforeend', itemHTML);
-        });
+                `;
+                fragment.appendChild(li);
+            });
+            listaCarrinho.appendChild(fragment);
+        }
 
         spanTotalItens.textContent = totalItens;
         spanTotalValor.textContent = totalValor.toFixed(2);
@@ -249,6 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function aumentarItem(index) {
+        // Reutiliza a lógica de adicionar, que já checa o estoque
         adicionarProdutoAoCarrinho(carrinho[index].codigo_barras, 1);
     }
 
@@ -263,17 +206,16 @@ document.addEventListener('DOMContentLoaded', () => {
         atualizarCarrinhoVisual();
     }
     
-    btnLimparCarrinho.addEventListener('click', () => {
-        carrinho = [];
-        atualizarCarrinhoVisual();
-    });
-    
+    /**
+     * Envia o carrinho para a API /api/venda.
+     */
     async function finalizarVenda() {
         if (carrinho.length === 0) {
             mostrarMensagem('Carrinho está vazio.', 'erro');
             return;
         }
 
+        // Ativa o spinner
         spinnerFinalizar.style.display = 'inline-block';
         iconFinalizar.style.display = 'none';
         btnFinalizarVenda.disabled = true;
@@ -292,29 +234,94 @@ document.addEventListener('DOMContentLoaded', () => {
                 gerarCupom(resultado.id_venda);
                 carrinho = [];
                 atualizarCarrinhoVisual();
-                carregarCacheProdutos();
+                carregarCacheProdutos(); // Recarrega o cache para atualizar o estoque
             } else {
                 mostrarMensagem(resultado.erro, 'erro');
             }
         } catch (error) {
             mostrarMensagem('Erro de conexão ao finalizar venda.', 'erro');
+            console.error(error);
         } finally {
+            // Desativa o spinner
             spinnerFinalizar.style.display = 'none';
             iconFinalizar.style.display = 'inline-block';
             btnFinalizarVenda.disabled = (carrinho.length === 0);
         }
     }
     
-    btnFinalizarVenda.addEventListener('click', finalizarVenda);
-
     function gerarCupom(idVenda) {
         window.open(`/cupom/${idVenda}`, '_blank');
     }
 
-    window.pdv = {
-        aumentarItem,
-        diminuirItem
-    };
+    // --- Event Listeners ---
 
+    formAddItem.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const codigo = inputCodigo.value;
+        const quantidade = parseInt(inputQtd.value);
+        adicionarProdutoAoCarrinho(codigo, quantidade);
+    });
+
+    inputCodigo.addEventListener('change', () => buscarProduto(inputCodigo.value));
+    
+    btnLimparCarrinho.addEventListener('click', () => {
+        carrinho = [];
+        atualizarCarrinhoVisual();
+    });
+    
+    btnFinalizarVenda.addEventListener('click', finalizarVenda);
+
+    // Delegação de eventos para botões +/- do carrinho
+    listaCarrinho.addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+
+        const action = button.dataset.action;
+        const index = parseInt(button.dataset.index, 10);
+
+        if (action === 'aumentar') {
+            aumentarItem(index);
+        } else if (action === 'diminuir') {
+            diminuirItem(index);
+        }
+    });
+
+    // Busca por nome
+    pdvBuscaNome.addEventListener('input', (e) => {
+        const valorInput = e.target.value;
+        const produtoSelecionado = cacheProdutos.find(p => `${p.nome} (Cod: ${p.codigo_barras})` === valorInput);
+        
+        if (produtoSelecionado) {
+            adicionarProdutoAoCarrinho(produtoSelecionado.codigo_barras, 1);
+            pdvBuscaNome.value = '';
+            inputCodigo.focus();
+        }
+    });
+
+    // --- Inicialização ---
+
+    // Inicializa o módulo do scanner
+    createScanner(
+        scannerModalEl, 
+        videoElement, 
+        btnSwitchCamera,
+        (codigoLido) => {
+            // Callback de Sucesso
+            inputCodigo.value = codigoLido;
+            buscarProduto(codigoLido);
+        },
+        (erro) => {
+            // Callback de Erro
+            mostrarMensagem(`Erro no scanner: ${erro.message}`, 'erro');
+        }
+    );
+
+    // Expõe funções para o `onclick` (se ainda usar) - Melhorado para delegação
+    // window.pdv = {
+    //     aumentarItem,
+    //     diminuirItem
+    // };
+
+    // Carrega o cache de produtos ao iniciar
     carregarCacheProdutos();
 });
